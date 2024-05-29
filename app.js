@@ -13,20 +13,20 @@ document.addEventListener("DOMContentLoaded", (event) => {
   const saveSettingsButton = document.getElementById("saveSettings");
   const settingsContainer = document.querySelector(".settings-container");
   const settingsToggle = document.getElementById("settings-toggle");
+  const chatHistoryToggle = document.getElementById("chat-history-toggle");
+  const sessionsContainer = document.querySelector(".sessions-container");
+  const sessionListContainer = document.querySelector(".session-list");
+
   settingsToggle.addEventListener("change", () => {
     settingsContainer.classList.toggle("hidden");
   });
-  const chatHistoryToggle = document.getElementById("chat-history-toggle");
-
-  const sessionsContainer = document.querySelector(".sessions-container");
-  const sessionListContainer = document.querySelector(".session-list");
 
   chatHistoryToggle.addEventListener("click", () => {
     sessionsContainer.classList.toggle("hidden");
   });
 
   let messages = JSON.parse(localStorage.getItem("chatHistory")) || [];
-  let settings = JSON.parse(localStorage.getItem("settings")) || {
+  const settings = JSON.parse(localStorage.getItem("settings")) || {
     endpoint: "",
     stopWord: "",
     maxTokens: 200,
@@ -35,112 +35,124 @@ document.addEventListener("DOMContentLoaded", (event) => {
     topP: 0.95,
   };
 
-  function renderMessages() {
+  const debounce = (func, delay) => {
+    let timeoutId;
+    return (...args) => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => func(...args), delay);
+    };
+  };
+
+  const renderMessages = () => {
     if (!marked) {
       console.error("Marked library is not loaded correctly.");
       return;
     }
 
-    chatHistory.innerHTML = messages
-      .map((msg, index) => {
-        if (msg.role === "assistant") {
-          return `<div class="message ${msg.role}">
-                  ${marked.parse(msg.content)}
-                  <button class="regenerate-button" data-index="${index}">Regenerate</button>
-                </div>`;
-        } else {
-          return `<div class="message ${msg.role}"><p>${marked.parse(
-            msg.content
-          )}</p></div>`;
-        }
-      })
-      .join("");
+    chatHistory.innerHTML = "";
+    messages.forEach((msg, index) => {
+      const messageDiv = document.createElement("div");
+      messageDiv.className = `message ${msg.role}`;
 
-    const regenerateButtons = document.querySelectorAll(".regenerate-button");
-    regenerateButtons.forEach((button) => {
-      button.addEventListener("click", async () => {
-        const index = parseInt(button.dataset.index);
-        messages.splice(index);
-        renderMessages();
+      if (msg.role === "assistant") {
+        messageDiv.innerHTML = marked.parse(msg.content);
+        const regenerateButton = document.createElement("button");
+        regenerateButton.className = "regenerate-button";
+        regenerateButton.dataset.index = index;
+        regenerateButton.textContent = "Regenerate";
+        messageDiv.appendChild(regenerateButton);
+      } else {
+        const paragraph = document.createElement("p");
+        paragraph.innerHTML = marked.parse(msg.content);
+        messageDiv.appendChild(paragraph);
+      }
 
-        sendButton.disabled = true;
-        sendButton.textContent = "Generating...";
+      chatHistory.appendChild(messageDiv);
+    });
 
-        try {
-          const response = await fetch(settings.endpoint, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer YOUR_API_KEY`,
-            },
-            body: JSON.stringify({
-              model: settings.model,
-              messages: messages,
-              stream: true,
-              stop: settings.stopWord,
-              max_tokens: settings.maxTokens,
-              temperature: settings.temperature,
-              top_p: settings.topP,
-            }),
-          });
+    chatHistory.scrollTop = chatHistory.scrollHeight;
+  };
 
-          const reader = response.body.getReader();
-          let currentResponse = "";
-          let initial = true;
+  const debouncedRenderMessages = debounce(renderMessages, 100);
 
-          while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
-            const chunk = new TextDecoder().decode(value);
-            if (chunk.trim()) {
-              const lines = chunk.split("\n");
-              for (let line of lines) {
-                if (line.startsWith("data:")) {
-                  if (line === "data: [DONE]") break;
+  chatHistory.addEventListener("click", async (event) => {
+    if (event.target.classList.contains("regenerate-button")) {
+      const index = parseInt(event.target.dataset.index);
+      messages.splice(index);
+      debouncedRenderMessages();
 
-                  const data = JSON.parse(line.substring(5));
-                  if (data.choices) {
-                    data.choices.forEach((choice) => {
-                      currentResponse += choice.delta.content;
-                    });
-                  }
+      sendButton.disabled = true;
+      sendButton.textContent = "Generating...";
+
+      try {
+        const response = await fetch(settings.endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer YOUR_API_KEY`,
+          },
+          body: JSON.stringify({
+            model: settings.model,
+            messages: messages,
+            stream: true,
+            stop: settings.stopWord,
+            max_tokens: settings.maxTokens,
+            temperature: settings.temperature,
+            top_p: settings.topP,
+          }),
+        });
+
+        const reader = response.body.getReader();
+        let currentResponse = "";
+        let initial = true;
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          const chunk = new TextDecoder().decode(value);
+          if (chunk.trim()) {
+            const lines = chunk.split("\n");
+            for (let line of lines) {
+              if (line.startsWith("data:")) {
+                if (line === "data: [DONE]") break;
+
+                const data = JSON.parse(line.substring(5));
+                if (data.choices) {
+                  data.choices.forEach((choice) => {
+                    currentResponse += choice.delta.content;
+                  });
                 }
               }
             }
-            if (initial) {
-              messages.push({ role: "assistant", content: currentResponse });
-              initial = false;
-            } else {
-              messages[messages.length - 1].content = currentResponse;
-            }
-            renderMessages();
           }
-        } catch (error) {
-          console.error("Error processing message:", error);
-          messages.push({
-            role: "error",
-            content: "An error occurred while processing your message.",
-          });
-          renderMessages();
-        } finally {
-          sendButton.disabled = false;
-          sendButton.textContent = "Send";
-          localStorage.setItem("chatHistory", JSON.stringify(messages));
+          if (initial) {
+            messages.push({ role: "assistant", content: currentResponse });
+            initial = false;
+          } else {
+            messages[messages.length - 1].content = currentResponse;
+          }
+          debouncedRenderMessages();
         }
-      });
-    });
-    chatHistory.scrollTop = chatHistory.scrollHeight;
-  }
+      } catch (error) {
+        console.error("Error processing message:", error);
+        messages.push({
+          role: "error",
+          content: "An error occurred while processing your message.",
+        });
+        debouncedRenderMessages();
+      } finally {
+        sendButton.disabled = false;
+        sendButton.textContent = "Send";
+        localStorage.setItem("chatHistory", JSON.stringify(messages));
+      }
+    }
+  });
 
   clearButton.addEventListener("click", () => {
-    Object.keys(localStorage).forEach((key) => {
-      if (key !== "settings") {
-        localStorage.removeItem(key);
-      }
-    });
-    sessionListContainer.innerHTML = ""; // Clear the sessions list display
+    localStorage.removeItem("chatHistory");
+    sessionListContainer.innerHTML = "";
     messages = [];
-    renderMessages();
+    debouncedRenderMessages();
   });
 
   historyButton.addEventListener("click", () => {
@@ -157,19 +169,19 @@ document.addEventListener("DOMContentLoaded", (event) => {
       addSessionToList(sessionName);
     }
     messages = [];
-    renderMessages();
+    debouncedRenderMessages();
   });
 
-  function addSessionToList(sessionName) {
+  const addSessionToList = (sessionName) => {
     const sessionDiv = document.createElement("div");
     sessionDiv.className = "session";
     sessionDiv.textContent = sessionName;
     sessionDiv.onclick = function () {
       messages = JSON.parse(localStorage.getItem(sessionName));
-      renderMessages();
+      debouncedRenderMessages();
     };
     sessionListContainer.appendChild(sessionDiv);
-  }
+  };
 
   Object.keys(localStorage).forEach((key) => {
     if (key !== "settings" && key !== "chatHistory") {
@@ -187,13 +199,13 @@ document.addEventListener("DOMContentLoaded", (event) => {
     localStorage.setItem("settings", JSON.stringify(settings));
   });
 
-  async function handleSendMessage() {
+  const handleSendMessage = async () => {
     const userInput = input.value.trim();
     if (userInput === "") return;
 
     const userMessage = { role: "user", content: userInput };
     messages.push(userMessage);
-    renderMessages();
+    debouncedRenderMessages();
     input.value = "";
 
     sendButton.disabled = true;
@@ -208,7 +220,7 @@ document.addEventListener("DOMContentLoaded", (event) => {
         },
         body: JSON.stringify({
           model: settings.model,
-          messages: messages, // Send the entire conversation history
+          messages: messages,
           stream: true,
           stop: settings.stopWord,
           max_tokens: settings.maxTokens,
@@ -246,7 +258,7 @@ document.addEventListener("DOMContentLoaded", (event) => {
         } else {
           messages[messages.length - 1].content = currentResponse;
         }
-        renderMessages();
+        debouncedRenderMessages();
       }
     } catch (error) {
       console.error("Error processing message:", error);
@@ -254,17 +266,17 @@ document.addEventListener("DOMContentLoaded", (event) => {
         role: "error",
         content: "An error occurred while processing your message.",
       });
-      renderMessages();
+      debouncedRenderMessages();
     } finally {
       sendButton.disabled = false;
       sendButton.textContent = "Send";
       localStorage.setItem("chatHistory", JSON.stringify(messages));
     }
-  }
-  sendButton.addEventListener("click", handleSendMessage);
-  renderMessages();
+  };
 
-  // Load settings from localStorage
+  sendButton.addEventListener("click", handleSendMessage);
+  debouncedRenderMessages();
+
   endpointInput.value = settings.endpoint;
   stopWordInput.value = settings.stopWord;
   maxTokensInput.value = settings.maxTokens;
