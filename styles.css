@@ -226,3 +226,19 @@ input:checked + .slider:before {
 .hidden {
   display: none;
 }
+
+.regenerate-button {
+  bottom: 5px;
+  right: 5px;
+  padding: 5px 10px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.regenerate-button:hover {
+  background-color: #45a049;
+}

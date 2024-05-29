@@ -42,16 +42,93 @@ document.addEventListener("DOMContentLoaded", (event) => {
     }
 
     chatHistory.innerHTML = messages
-      .map((msg) => {
+      .map((msg, index) => {
         if (msg.role === "assistant") {
-          return `<div class="message ${msg.role}">${marked.parse(
-            msg.content
-          )}</div>`;
+          return `<div class="message ${msg.role}">
+                  ${marked.parse(msg.content)}
+                  <button class="regenerate-button" data-index="${index}">Regenerate</button>
+                </div>`;
         } else {
-          return `<div class="message ${msg.role}"><p>${msg.content}</p></div>`;
+          return `<div class="message ${msg.role}"><p>${marked.parse(
+            msg.content
+          )}</p></div>`;
         }
       })
       .join("");
+
+    const regenerateButtons = document.querySelectorAll(".regenerate-button");
+    regenerateButtons.forEach((button) => {
+      button.addEventListener("click", async () => {
+        const index = parseInt(button.dataset.index);
+        messages.splice(index);
+        renderMessages();
+
+        sendButton.disabled = true;
+        sendButton.textContent = "Generating...";
+
+        try {
+          const response = await fetch(settings.endpoint, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer YOUR_API_KEY`,
+            },
+            body: JSON.stringify({
+              model: settings.model,
+              messages: messages,
+              stream: true,
+              stop: settings.stopWord,
+              max_tokens: settings.maxTokens,
+              temperature: settings.temperature,
+              top_p: settings.topP,
+            }),
+          });
+
+          const reader = response.body.getReader();
+          let currentResponse = "";
+          let initial = true;
+
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            const chunk = new TextDecoder().decode(value);
+            if (chunk.trim()) {
+              const lines = chunk.split("\n");
+              for (let line of lines) {
+                if (line.startsWith("data:")) {
+                  if (line === "data: [DONE]") break;
+
+                  const data = JSON.parse(line.substring(5));
+                  if (data.choices) {
+                    data.choices.forEach((choice) => {
+                      currentResponse += choice.delta.content;
+                    });
+                  }
+                }
+              }
+            }
+            if (initial) {
+              messages.push({ role: "assistant", content: currentResponse });
+              initial = false;
+            } else {
+              messages[messages.length - 1].content = currentResponse;
+            }
+            renderMessages();
+          }
+        } catch (error) {
+          console.error("Error processing message:", error);
+          messages.push({
+            role: "error",
+            content: "An error occurred while processing your message.",
+          });
+          renderMessages();
+        } finally {
+          sendButton.disabled = false;
+          sendButton.textContent = "Send";
+          localStorage.setItem("chatHistory", JSON.stringify(messages));
+        }
+      });
+    });
     chatHistory.scrollTop = chatHistory.scrollHeight;
   }
 
