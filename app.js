@@ -33,13 +33,27 @@ document.addEventListener("DOMContentLoaded", (event) => {
     model: "meta-llama/Meta-Llama-3-8B-Instruct",
     temperature: 0.0,
     topP: 0.95,
+    apiKey: "",
   };
 
-  const debounce = (func, delay) => {
-    let timeoutId;
-    return (...args) => {
-      clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => func(...args), delay);
+  const throttle = (func, limit) => {
+    let lastFunc;
+    let lastRan;
+    return function () {
+      const context = this;
+      const args = arguments;
+      if (!lastRan) {
+        func.apply(context, args);
+        lastRan = Date.now();
+      } else {
+        clearTimeout(lastFunc);
+        lastFunc = setTimeout(function () {
+          if (Date.now() - lastRan >= limit) {
+            func.apply(context, args);
+            lastRan = Date.now();
+          }
+        }, limit - (Date.now() - lastRan));
+      }
     };
   };
 
@@ -77,7 +91,7 @@ document.addEventListener("DOMContentLoaded", (event) => {
     chatHistory.scrollTop = chatHistory.scrollHeight;
   };
 
-  const debouncedRenderMessages = debounce(renderMessages, 100);
+  const throttledRenderMessages = throttle(renderMessages, 100);
 
   chatHistory.addEventListener("click", async (event) => {
     if (event.target.classList.contains("regenerate-button")) {
@@ -125,13 +139,13 @@ document.addEventListener("DOMContentLoaded", (event) => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer YOUR_API_KEY`,
+          Authorization: `Bearer ${settings.apiKey}`,
         },
         body: JSON.stringify({
           model: settings.model,
           messages: messageList,
           stream: true,
-          stop: settings.stopWord,
+          stop: settings.stopWord ? settings.stopWord : undefined,
           max_tokens: settings.maxTokens,
           temperature: settings.temperature,
           top_p: settings.topP,
@@ -155,7 +169,7 @@ document.addEventListener("DOMContentLoaded", (event) => {
               const data = JSON.parse(line.substring(5));
               if (data.choices) {
                 data.choices.forEach((choice) => {
-                  currentResponse += choice.delta.content;
+                  currentResponse += choice.delta.content ?? "";
                 });
               }
             }
@@ -170,7 +184,7 @@ document.addEventListener("DOMContentLoaded", (event) => {
         } else {
           messages[startIndex].content = currentResponse;
         }
-        debouncedRenderMessages();
+        throttledRenderMessages();
       }
     } catch (error) {
       console.error("Error processing message:", error);
@@ -178,7 +192,7 @@ document.addEventListener("DOMContentLoaded", (event) => {
         role: "error",
         content: "An error occurred while processing your message.",
       });
-      debouncedRenderMessages();
+      throttledRenderMessages();
     } finally {
       sendButton.disabled = false;
       sendButton.textContent = "Send";
@@ -190,7 +204,7 @@ document.addEventListener("DOMContentLoaded", (event) => {
     localStorage.removeItem("chatHistory");
     sessionListContainer.innerHTML = "";
     messages = [];
-    debouncedRenderMessages();
+    throttledRenderMessages();
   });
 
   historyButton.addEventListener("click", () => {
@@ -207,7 +221,7 @@ document.addEventListener("DOMContentLoaded", (event) => {
       addSessionToList(sessionName);
     }
     messages = [];
-    debouncedRenderMessages();
+    throttledRenderMessages();
   });
 
   const addSessionToList = (sessionName) => {
@@ -216,7 +230,7 @@ document.addEventListener("DOMContentLoaded", (event) => {
     sessionDiv.textContent = sessionName;
     sessionDiv.onclick = function () {
       messages = JSON.parse(localStorage.getItem(sessionName));
-      debouncedRenderMessages();
+      throttledRenderMessages();
     };
     sessionListContainer.appendChild(sessionDiv);
   };
@@ -234,6 +248,7 @@ document.addEventListener("DOMContentLoaded", (event) => {
     settings.model = modelInput.value.trim();
     settings.temperature = parseFloat(temperatureInput.value);
     settings.topP = parseFloat(topPInput.value);
+    settings.apiKey = document.getElementById("apiKey").value.trim();
     localStorage.setItem("settings", JSON.stringify(settings));
   });
 
@@ -243,13 +258,13 @@ document.addEventListener("DOMContentLoaded", (event) => {
 
     const userMessage = { role: "user", content: userInput };
     messages.push(userMessage);
-    debouncedRenderMessages();
+    throttledRenderMessages();
     input.value = "";
 
     await regenerateResponse(messages, messages.length);
   });
 
-  debouncedRenderMessages();
+  throttledRenderMessages();
 
   endpointInput.value = settings.endpoint;
   stopWordInput.value = settings.stopWord;
