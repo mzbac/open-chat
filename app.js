@@ -10,6 +10,7 @@ document.addEventListener("DOMContentLoaded", (event) => {
   const modelInput = document.getElementById("model");
   const temperatureInput = document.getElementById("temperature");
   const topPInput = document.getElementById("topP");
+  const apiKeyInput = document.getElementById("apiKey");
   const saveSettingsButton = document.getElementById("saveSettings");
   const settingsContainer = document.querySelector(".settings-container");
   const settingsToggle = document.getElementById("settings-toggle");
@@ -57,6 +58,11 @@ document.addEventListener("DOMContentLoaded", (event) => {
     };
   };
 
+  function clearErrorMessages() {
+    messages = messages.filter((msg) => msg.role !== "error");
+    localStorage.setItem("chatHistory", JSON.stringify(messages));
+    throttledRenderMessages();
+  }
   const renderMessages = () => {
     if (!marked) {
       console.error("Marked library is not loaded correctly.");
@@ -119,13 +125,16 @@ document.addEventListener("DOMContentLoaded", (event) => {
     },
     true
   );
+
   async function regenerateAssistantMessage(index) {
+    clearErrorMessages();
     messages.splice(index, 1);
     const updatedMessages = messages.slice(0, index);
     await regenerateResponse(updatedMessages, index);
   }
 
   async function regenerateFromUserEdit(index) {
+    clearErrorMessages();
     messages = messages.slice(0, index + 1);
     await regenerateResponse(messages, index + 1);
   }
@@ -152,6 +161,9 @@ document.addEventListener("DOMContentLoaded", (event) => {
         }),
       });
 
+      if (!response.ok) {
+        throw new Error(`Failed to generate response: ${response.statusText}`);
+      }
       const reader = response.body.getReader();
       let currentResponse = "";
       let initial = true;
@@ -174,17 +186,17 @@ document.addEventListener("DOMContentLoaded", (event) => {
               }
             }
           }
+          if (initial) {
+            messages.splice(startIndex, 0, {
+              role: "assistant",
+              content: currentResponse,
+            });
+            initial = false;
+          } else {
+            messages[startIndex].content = currentResponse;
+          }
+          throttledRenderMessages();
         }
-        if (initial) {
-          messages.splice(startIndex, 0, {
-            role: "assistant",
-            content: currentResponse,
-          });
-          initial = false;
-        } else {
-          messages[startIndex].content = currentResponse;
-        }
-        throttledRenderMessages();
       }
     } catch (error) {
       console.error("Error processing message:", error);
@@ -248,11 +260,12 @@ document.addEventListener("DOMContentLoaded", (event) => {
     settings.model = modelInput.value.trim();
     settings.temperature = parseFloat(temperatureInput.value);
     settings.topP = parseFloat(topPInput.value);
-    settings.apiKey = document.getElementById("apiKey").value.trim();
+    settings.apiKey = document.getElementById("apiKey").value.trim(); // Ensure API key is saved
     localStorage.setItem("settings", JSON.stringify(settings));
   });
 
   sendButton.addEventListener("click", async () => {
+    clearErrorMessages();
     const userInput = input.value.trim();
     if (userInput === "") return;
 
@@ -272,4 +285,5 @@ document.addEventListener("DOMContentLoaded", (event) => {
   modelInput.value = settings.model;
   temperatureInput.value = settings.temperature;
   topPInput.value = settings.topP;
+  apiKeyInput.value = settings.apiKey ?? "";
 });
