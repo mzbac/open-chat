@@ -63,6 +63,7 @@ document.addEventListener("DOMContentLoaded", (event) => {
     localStorage.setItem("chatHistory", JSON.stringify(messages));
     throttledRenderMessages();
   }
+
   const renderMessages = () => {
     if (!marked) {
       console.error("Marked library is not loaded correctly.");
@@ -264,7 +265,7 @@ document.addEventListener("DOMContentLoaded", (event) => {
     localStorage.setItem("settings", JSON.stringify(settings));
   });
 
-  sendButton.addEventListener("click", async () => {
+  const sendMessage = async () => {
     clearErrorMessages();
     const userInput = input.value.trim();
     if (userInput === "") return;
@@ -275,6 +276,15 @@ document.addEventListener("DOMContentLoaded", (event) => {
     input.value = "";
 
     await regenerateResponse(messages, messages.length);
+  };
+
+  sendButton.addEventListener("click", sendMessage);
+
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault(); // Prevent the default behavior of adding a new line
+      sendMessage();
+    }
   });
 
   throttledRenderMessages();
