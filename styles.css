@@ -79,6 +79,9 @@ body {
 }
 
 .settings-container {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 3;
   padding: 20px;
   border-left: 1px solid #e0e0e0;
   overflow-y: auto;
@@ -92,7 +95,6 @@ body {
 
 .settings-container input[type="text"],
 .settings-container input[type="number"] {
-  width: 100%;
   padding: 10px;
   margin-bottom: 10px;
   border: 1px solid #ccc;
@@ -242,4 +244,20 @@ input:checked + .slider:before {
 
 .regenerate-button:hover {
   background-color: #45a049;
+}
+.setting-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.setting-row label:last-child {
+  margin-left: 10px;
+  margin-bottom: 0;
+  color: #333;
+  font-size: 16px;
+}
+
+.setting-row .switch {
+  margin-right: 0;
 }

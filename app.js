@@ -17,6 +17,7 @@ document.addEventListener("DOMContentLoaded", (event) => {
   const chatHistoryToggle = document.getElementById("chat-history-toggle");
   const sessionsContainer = document.querySelector(".sessions-container");
   const sessionListContainer = document.querySelector(".session-list");
+  const apiKeyHeaderToggle = document.getElementById("apiKeyHeaderToggle");
 
   settingsToggle.addEventListener("change", () => {
     settingsContainer.classList.toggle("hidden");
@@ -35,6 +36,7 @@ document.addEventListener("DOMContentLoaded", (event) => {
     temperature: 0.0,
     topP: 0.95,
     apiKey: "",
+    useApiKeyHeader: false,
   };
 
   const throttle = (func, limit) => {
@@ -145,12 +147,19 @@ document.addEventListener("DOMContentLoaded", (event) => {
     sendButton.textContent = "Generating...";
 
     try {
+      const headers = {
+        "Content-Type": "application/json",
+      };
+
+      if (settings.useApiKeyHeader) {
+        headers["api-key"] = settings.apiKey;
+      } else {
+        headers["Authorization"] = `Bearer ${settings.apiKey}`;
+      }
+
       const response = await fetch(settings.endpoint, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${settings.apiKey}`,
-        },
+        headers: headers,
         body: JSON.stringify({
           model: settings.model,
           messages: messageList,
@@ -261,7 +270,8 @@ document.addEventListener("DOMContentLoaded", (event) => {
     settings.model = modelInput.value.trim();
     settings.temperature = parseFloat(temperatureInput.value);
     settings.topP = parseFloat(topPInput.value);
-    settings.apiKey = document.getElementById("apiKey").value.trim(); // Ensure API key is saved
+    settings.apiKey = document.getElementById("apiKey").value.trim();
+    settings.useApiKeyHeader = apiKeyHeaderToggle.checked;
     localStorage.setItem("settings", JSON.stringify(settings));
   });
 
@@ -282,7 +292,7 @@ document.addEventListener("DOMContentLoaded", (event) => {
 
   input.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault(); // Prevent the default behavior of adding a new line
+      event.preventDefault();
       sendMessage();
     }
   });
@@ -296,4 +306,5 @@ document.addEventListener("DOMContentLoaded", (event) => {
   temperatureInput.value = settings.temperature;
   topPInput.value = settings.topP;
   apiKeyInput.value = settings.apiKey ?? "";
+  apiKeyHeaderToggle.checked = settings.useApiKeyHeader;
 });
